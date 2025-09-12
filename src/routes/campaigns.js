@@ -234,7 +234,7 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
         personalizedBody = personalizedBody.replace(
           /href="([^"]+)"/g,
           (match, url) =>
-            `href="http://localhost:3000/campaigns/track/click/${campaign._id}/${recipient._id}?url=${encodeURIComponent(
+            `href="https://emailmarketingbackend.onrender.com/campaigns/track/click/${campaign._id}/${recipient._id}?url=${encodeURIComponent(
               url
             )}"`
         );
@@ -243,23 +243,23 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
         const trackingId = `${campaign._id}_${recipient._id}_${Date.now()}`;
         
         // 1. Traditional tracking pixel (for clients that load images)
-        const pixelTracker = `<img src="http://localhost:3000/campaigns/track/open/${campaign._id}/${recipient._id}?t=${trackingId}" width="1" height="1" style="display:none;" />`;
+        const pixelTracker = `<img src="https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?t=${trackingId}" width="1" height="1" style="display:none;" />`;
         
         // 2. CSS-based tracking (works even when images are blocked)
         const cssTracker = `<style>
           @media screen {
             .email-tracker-${trackingId.replace(/[^a-zA-Z0-9]/g, '')} {
-              background-image: url('http://localhost:3000/campaigns/track/open/${campaign._id}/${recipient._id}?css=true&t=${trackingId}');
+              background-image: url('https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?css=true&t=${trackingId}');
             }
           }
         </style>
         <div class="email-tracker-${trackingId.replace(/[^a-zA-Z0-9]/g, '')}" style="height:0;overflow:hidden;"></div>`;
         
         // 3. Link-based tracking (embedded in content)
-        const linkTracker = `<a href="http://localhost:3000/campaigns/track/open/${campaign._id}/${recipient._id}?link=true&t=${trackingId}" style="display:none;" aria-hidden="true">.</a>`;
+        const linkTracker = `<a https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?link=true&t=${trackingId}" style="display:none;" aria-hidden="true">.</a>`;
         
         // 4. Web beacon in a common HTML element
-        const beaconTracker = `<div style="background:url('http://localhost:3000/campaigns/track/open/${campaign._id}/${recipient._id}?beacon=true&t=${trackingId}');width:0;height:0;overflow:hidden;"></div>`;
+        const beaconTracker = `<div style="background:url('https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?beacon=true&t=${trackingId}');width:0;height:0;overflow:hidden;"></div>`;
 
         // Inject all tracking methods
         personalizedBody += `
