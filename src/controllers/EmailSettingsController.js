@@ -3,8 +3,8 @@ const EmailSettings = require("../models/EmailSettings");
 
 async function getSettings(req, res) {
   try {
-    const settings = await EmailSettings.findOne().sort({ createdAt: -1 });
-    res.json(settings);
+    const settings = await EmailSettings.findOne({ userId: req.userId });
+    res.json(settings || {}); // return empty object if none exist
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -15,8 +15,8 @@ async function updateSettings(req, res) {
     const { smtpHost, smtpPort, secure, user, pass, senderName, replyTo } = req.body;
 
     const settings = await EmailSettings.findOneAndUpdate(
-      {},
-      { smtpHost, smtpPort, secure, user, pass, senderName, replyTo },
+      { userId: req.userId },  // scoped to logged-in user
+      { smtpHost, smtpPort, secure, user, pass, senderName, replyTo, userId: req.userId },
       { new: true, upsert: true }
     );
 
