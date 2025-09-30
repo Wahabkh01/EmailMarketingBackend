@@ -99,21 +99,23 @@ router.put("/:id", authMiddleware, async (req, res) => {
   try {
     const { subject, preheader, body, recipients, scheduledAt } = req.body;
 
-    if (preheader !== undefined) campaign.preheader = preheader;
-
+    // 🔹 find campaign first
     const campaign = await Campaign.findOne({
       _id: req.params.id,
       userId: req.userId,
     });
+
     if (!campaign) {
       return res.status(404).json({ msg: "Campaign not found" });
     }
 
+    // 🔹 now safely update fields
     if (subject !== undefined) campaign.subject = subject;
+    if (preheader !== undefined) campaign.preheader = preheader;
     if (body !== undefined) campaign.body = body;
     if (scheduledAt !== undefined) campaign.scheduledAt = scheduledAt;
 
-    // Normalize recipients
+    // 🔹 recipients normalization
     if (Array.isArray(recipients)) {
       campaign.recipients = recipients.map((r) => {
         if (typeof r === "string") {
@@ -137,7 +139,7 @@ router.put("/:id", authMiddleware, async (req, res) => {
       });
     }
 
-    // Reset stats if previously sent
+    // 🔹 reset stats if already sent
     if (["sent", "sending", "completed"].includes(campaign.status)) {
       campaign.status = "draft";
       campaign.sentCount = 0;
@@ -163,6 +165,7 @@ router.put("/:id", authMiddleware, async (req, res) => {
     res.status(500).send("Server error");
   }
 });
+
 
 // =============================
 // Delete campaign
