@@ -21,14 +21,6 @@ async function sendEmail({ to, subject, html }) {
         user: settings.user,
         pass: settings.pass,
       },
-      // Add timeout configurations
-      connectionTimeout: 20000,   // 10 seconds to establish connection
-      greetingTimeout: 20000,     // 10 seconds to receive greeting
-      socketTimeout: 60000,       // 30 seconds for socket inactivity
-      // Add pool configuration for better performance
-      pool: true,
-      maxConnections: 5,
-      maxMessages: 100,
     });
 
     await transporter.sendMail({
@@ -41,9 +33,7 @@ async function sendEmail({ to, subject, html }) {
 
     console.log(`✅ Email sent to ${to}`);
   } catch (err) {
-    console.error(`❌ Error sending email to ${to}:`, err.message);
-    console.error("Error code:", err.code);
-    console.error("Error command:", err.command);
+    console.error("❌ Error sending email:", err.message);
     throw err;
   }
 }
