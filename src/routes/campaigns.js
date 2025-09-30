@@ -11,7 +11,7 @@ const mongoose = require("mongoose");
 // =============================
 router.post("/", authMiddleware, async (req, res) => {
   try {
-    const { subject, preheader, body, recipients, listName, scheduledAt } = req.body;
+    const { subject, body, recipients, listName, scheduledAt } = req.body;
     let finalRecipients = [];
 
     if (recipients && recipients.length > 0) {
@@ -43,13 +43,11 @@ router.post("/", authMiddleware, async (req, res) => {
     const campaign = new Campaign({
       userId: req.userId,
       subject,
-      preheader,   // 👈 save preheader
       body,
       recipients: finalRecipients,
       scheduledAt,
       status: scheduledAt ? "scheduled" : "draft",
     });
-    
 
     await campaign.save();
     res.json(campaign);
@@ -97,9 +95,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
 // =============================
 router.put("/:id", authMiddleware, async (req, res) => {
   try {
-    const { subject, preheader, body, recipients, scheduledAt } = req.body;
-
-    if (preheader !== undefined) campaign.preheader = preheader;
+    const { subject, body, recipients, scheduledAt } = req.body;
 
     const campaign = await Campaign.findOne({
       _id: req.params.id,
@@ -188,7 +184,7 @@ router.delete("/:id", authMiddleware, async (req, res) => {
 // Enhanced tracking implementation for your campaigns route
 
 // =============================
-// Send campaign with improved tracking + random delay (10–30 min)
+// Send campaign with improved tracking
 // =============================
 router.post("/:id/send", authMiddleware, async (req, res) => {
   try {
@@ -234,15 +230,6 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
           .replace(/{{lastName}}/g, lastName)
           .replace(/{Name}/g, firstName);
 
-        // Inject hidden preheader at top
-        if (campaign.preheader) {
-          personalizedBody =
-            `<div style="display:none; max-height:0; overflow:hidden; opacity:0; font-size:0; line-height:0;">
-              ${campaign.preheader}
-            </div>` + personalizedBody;
-        }
-
-
         // Wrap links with click-tracking
         personalizedBody = personalizedBody.replace(
           /href="([^"]+)"/g,
@@ -255,8 +242,10 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
         // ENHANCED TRACKING: Multiple tracking methods
         const trackingId = `${campaign._id}_${recipient._id}_${Date.now()}`;
         
+        // 1. Traditional tracking pixel (for clients that load images)
         const pixelTracker = `<img src="https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?t=${trackingId}" width="1" height="1" style="display:none;" />`;
         
+        // 2. CSS-based tracking (works even when images are blocked)
         const cssTracker = `<style>
           @media screen {
             .email-tracker-${trackingId.replace(/[^a-zA-Z0-9]/g, '')} {
@@ -266,10 +255,13 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
         </style>
         <div class="email-tracker-${trackingId.replace(/[^a-zA-Z0-9]/g, '')}" style="height:0;overflow:hidden;"></div>`;
         
-        const linkTracker = `<a href="https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?link=true&t=${trackingId}" style="display:none;" aria-hidden="true">.</a>`;
+        // 3. Link-based tracking (embedded in content)
+        const linkTracker = `<a https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?link=true&t=${trackingId}" style="display:none;" aria-hidden="true">.</a>`;
         
+        // 4. Web beacon in a common HTML element
         const beaconTracker = `<div style="background:url('https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?beacon=true&t=${trackingId}');width:0;height:0;overflow:hidden;"></div>`;
 
+        // Inject all tracking methods
         personalizedBody += `
           ${pixelTracker}
           ${cssTracker}
@@ -288,14 +280,7 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
         await campaign.save();
         console.log(`✅ Email sent to ${emailAddress}`);
 
-        // 🔥 Random delay between 10–30 minutes before next email
-        const randomDelay =
-          Math.floor(Math.random() * (30 - 10 + 1) + 10) * 60 * 1000;
-        console.log(
-          `⏳ Waiting ${randomDelay / 60000} minutes before sending next email...`
-        );
-        await delay(randomDelay);
-
+        await delay(2000);
       } catch (error) {
         console.error(`❌ Failed to send to ${recipient.email}`, error.message);
       }
@@ -314,7 +299,6 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
     res.status(500).send("Server error");
   }
 });
-
 
 // =============================
 // Analytics (fixed)

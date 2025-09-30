@@ -21,9 +21,8 @@ const campaignSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     subject: { type: String, required: true },
-    preheader: { type: String },   // 👈 NEW FIELD
     body: { type: String, required: true },
-    recipients: [recipientSchema],
+    recipients: [recipientSchema], // ✅ use sub-schema
     status: {
       type: String,
       enum: ["draft", "scheduled", "sending", "completed", "sent", "failed"],
@@ -36,6 +35,5 @@ const campaignSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-
 
 module.exports = mongoose.model("Campaign", campaignSchema);
