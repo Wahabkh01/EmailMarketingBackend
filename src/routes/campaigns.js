@@ -200,123 +200,45 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
       userId: req.userId,
     });
     if (!campaign) return res.status(404).json({ msg: "Campaign not found" });
-
     if (!campaign.recipients || campaign.recipients.length === 0) {
       return res.status(400).json({ msg: "No recipients to send to" });
     }
 
-    campaign.status = "sending";
+    campaign.status = "queued";
     await campaign.save();
 
-    let sentCount = 0;
-    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    // Respond immediately so Render doesn't time out
+    res.json({ msg: "Campaign queued for sending" });
 
-    for (let recipient of campaign.recipients) {
-      try {
-        const emailAddress = recipient.email;
+    // Fire and forget in background
+    (async () => {
+      let sentCount = 0;
+      const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
-        // Derive name if missing
-        let firstName = recipient.firstName;
-        let lastName = recipient.lastName;
+      for (let recipient of campaign.recipients) {
+        try {
+          await sendEmail({ to: recipient.email, subject: campaign.subject, html: campaign.body });
+          sentCount++;
+          campaign.sentCount = sentCount;
+          await campaign.save();
 
-        if (!firstName && !lastName) {
-          let extracted = emailAddress.split("@")[0];
-          extracted = extracted.replace(/[0-9._-]+/g, " ").trim();
-          if (extracted) {
-            firstName = extracted.split(" ")[0];
-            firstName =
-              firstName.charAt(0).toUpperCase() + firstName.slice(1);
-          }
+          const randomDelay = (Math.floor(Math.random() * 3) + 1) * 60 * 1000; // 1–3 minutes
+          await delay(randomDelay);
+        } catch (err) {
+          console.error("❌ Failed to send:", recipient.email, err.message);
         }
-        if (!firstName) firstName = "Friend";
-        if (!lastName) lastName = "";
-
-        // Replace placeholders
-        let personalizedBody = campaign.body
-          .replace(/{{firstName}}/g, firstName)
-          .replace(/{{lastName}}/g, lastName)
-          .replace(/{Name}/g, firstName);
-
-        // Inject hidden preheader at top
-        if (campaign.preheader) {
-          personalizedBody =
-            `<div style="display:none; max-height:0; overflow:hidden; opacity:0; font-size:0; line-height:0;">
-              ${campaign.preheader}
-            </div>` + personalizedBody;
-        }
-
-
-        // Wrap links with click-tracking
-        personalizedBody = personalizedBody.replace(
-          /href="([^"]+)"/g,
-          (match, url) =>
-            `href="https://emailmarketingbackend.onrender.com/campaigns/track/click/${campaign._id}/${recipient._id}?url=${encodeURIComponent(
-              url
-            )}"`
-        );
-
-        // ENHANCED TRACKING: Multiple tracking methods
-        const trackingId = `${campaign._id}_${recipient._id}_${Date.now()}`;
-        
-        const pixelTracker = `<img src="https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?t=${trackingId}" width="1" height="1" style="display:none;" />`;
-        
-        const cssTracker = `<style>
-          @media screen {
-            .email-tracker-${trackingId.replace(/[^a-zA-Z0-9]/g, '')} {
-              background-image: url('https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?css=true&t=${trackingId}');
-            }
-          }
-        </style>
-        <div class="email-tracker-${trackingId.replace(/[^a-zA-Z0-9]/g, '')}" style="height:0;overflow:hidden;"></div>`;
-        
-        const linkTracker = `<a href="https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?link=true&t=${trackingId}" style="display:none;" aria-hidden="true">.</a>`;
-        
-        const beaconTracker = `<div style="background:url('https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?beacon=true&t=${trackingId}');width:0;height:0;overflow:hidden;"></div>`;
-
-        personalizedBody += `
-          ${pixelTracker}
-          ${cssTracker}
-          ${linkTracker}
-          ${beaconTracker}
-        `;
-
-        await sendEmail({
-          to: emailAddress,
-          subject: campaign.subject,
-          html: personalizedBody,
-        });
-
-        sentCount++;
-        campaign.sentCount = sentCount;
-        await campaign.save();
-        console.log(`✅ Email sent to ${emailAddress}`);
-
-        // 🔥 Random delay between 10–30 minutes before next email
-        const randomDelay =
-          Math.floor(Math.random() * (3 - 1 + 1) + 1) * 60 * 1000;
-        console.log(
-          `⏳ Waiting ${randomDelay / 60000} minutes before sending next email...`
-        );
-        await delay(randomDelay);
-
-      } catch (error) {
-        console.error(`❌ Failed to send to ${recipient.email}`, error.message);
       }
-    }
 
-    campaign.status = "sent";
-    await campaign.save();
-
-    res.json({
-      msg: "Campaign sent successfully",
-      sentCount: campaign.sentCount,
-      totalRecipients: campaign.recipients.length,
-    });
+      campaign.status = "sent";
+      await campaign.save();
+      console.log("✅ Campaign finished:", campaign._id);
+    })();
   } catch (err) {
     console.error(err.message);
     res.status(500).send("Server error");
   }
 });
+
 
 
 // =============================
