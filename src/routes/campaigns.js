@@ -191,7 +191,7 @@ router.delete("/:id", authMiddleware, async (req, res) => {
 // Enhanced tracking implementation for your campaigns route
 
 // =============================
-// Send campaign with improved tracking + random delay (10–30 min)
+// Send campaign under 50s (short random delay)
 // =============================
 router.post("/:id/send", authMiddleware, async (req, res) => {
   try {
@@ -204,25 +204,30 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
       return res.status(400).json({ msg: "No recipients to send to" });
     }
 
-    campaign.status = "queued";
+    campaign.status = "sending";
     await campaign.save();
 
-    // Respond immediately so Render doesn't time out
-    res.json({ msg: "Campaign queued for sending" });
+    // Respond immediately so Render doesn’t time out
+    res.json({ msg: "Campaign sending started" });
 
-    // Fire and forget in background
+    // Fire and forget (but short delays to avoid 50s timeout)
     (async () => {
       let sentCount = 0;
       const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
       for (let recipient of campaign.recipients) {
         try {
-          await sendEmail({ to: recipient.email, subject: campaign.subject, html: campaign.body });
+          await sendEmail({
+            to: recipient.email,
+            subject: campaign.subject,
+            html: campaign.body,
+          });
           sentCount++;
           campaign.sentCount = sentCount;
           await campaign.save();
 
-          const randomDelay = (Math.floor(Math.random() * 3) + 1) * 60 * 1000; // 1–3 minutes
+          // 🔥 Short random delay (100–500 ms) instead of minutes
+          const randomDelay = Math.floor(Math.random() * 400) + 100;
           await delay(randomDelay);
         } catch (err) {
           console.error("❌ Failed to send:", recipient.email, err.message);
@@ -238,7 +243,6 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
     res.status(500).send("Server error");
   }
 });
-
 
 
 // =============================
