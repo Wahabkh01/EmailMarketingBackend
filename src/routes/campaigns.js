@@ -11,7 +11,7 @@ const mongoose = require("mongoose");
 // =============================
 router.post("/", authMiddleware, async (req, res) => {
   try {
-    const { subject, preheader, body, recipients, listName, scheduledAt } = req.body;
+    const { subject, body, recipients, listName, scheduledAt } = req.body;
     let finalRecipients = [];
 
     if (recipients && recipients.length > 0) {
@@ -43,13 +43,11 @@ router.post("/", authMiddleware, async (req, res) => {
     const campaign = new Campaign({
       userId: req.userId,
       subject,
-      preheader,   // 👈 save preheader
       body,
       recipients: finalRecipients,
       scheduledAt,
       status: scheduledAt ? "scheduled" : "draft",
     });
-    
 
     await campaign.save();
     res.json(campaign);
@@ -97,25 +95,21 @@ router.get("/:id", authMiddleware, async (req, res) => {
 // =============================
 router.put("/:id", authMiddleware, async (req, res) => {
   try {
-    const { subject, preheader, body, recipients, scheduledAt } = req.body;
+    const { subject, body, recipients, scheduledAt } = req.body;
 
-    // 🔹 find campaign first
     const campaign = await Campaign.findOne({
       _id: req.params.id,
       userId: req.userId,
     });
-
     if (!campaign) {
       return res.status(404).json({ msg: "Campaign not found" });
     }
 
-    // 🔹 now safely update fields
     if (subject !== undefined) campaign.subject = subject;
-    if (preheader !== undefined) campaign.preheader = preheader;
     if (body !== undefined) campaign.body = body;
     if (scheduledAt !== undefined) campaign.scheduledAt = scheduledAt;
 
-    // 🔹 recipients normalization
+    // Normalize recipients
     if (Array.isArray(recipients)) {
       campaign.recipients = recipients.map((r) => {
         if (typeof r === "string") {
@@ -139,7 +133,7 @@ router.put("/:id", authMiddleware, async (req, res) => {
       });
     }
 
-    // 🔹 reset stats if already sent
+    // Reset stats if previously sent
     if (["sent", "sending", "completed"].includes(campaign.status)) {
       campaign.status = "draft";
       campaign.sentCount = 0;
@@ -166,7 +160,6 @@ router.put("/:id", authMiddleware, async (req, res) => {
   }
 });
 
-
 // =============================
 // Delete campaign
 // =============================
@@ -191,10 +184,7 @@ router.delete("/:id", authMiddleware, async (req, res) => {
 // Enhanced tracking implementation for your campaigns route
 
 // =============================
-// Send campaign with fixed 2s delay between emails
-// =============================
-// =============================
-// Send campaign with improved tracking (background safe)
+// Send campaign with improved tracking
 // =============================
 router.post("/:id/send", authMiddleware, async (req, res) => {
   try {
@@ -202,8 +192,8 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
       _id: req.params.id,
       userId: req.userId,
     });
-
     if (!campaign) return res.status(404).json({ msg: "Campaign not found" });
+
     if (!campaign.recipients || campaign.recipients.length === 0) {
       return res.status(400).json({ msg: "No recipients to send to" });
     }
@@ -211,105 +201,103 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
     campaign.status = "sending";
     await campaign.save();
 
-    // ✅ Respond immediately (no timeout issues)
-    res.json({ msg: "Campaign sending started", campaignId: campaign._id });
+    let sentCount = 0;
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    // ✅ Run async in background
-    setImmediate(async () => {
-      let sentCount = 0;
-      const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let recipient of campaign.recipients) {
+      try {
+        const emailAddress = recipient.email;
 
-      for (let recipient of campaign.recipients) {
-        try {
-          const emailAddress = recipient.email;
+        // Derive name if missing
+        let firstName = recipient.firstName;
+        let lastName = recipient.lastName;
 
-          // Derive name if missing
-          let firstName = recipient.firstName;
-          let lastName = recipient.lastName;
+        if (!firstName && !lastName) {
+          let extracted = emailAddress.split("@")[0];
+          extracted = extracted.replace(/[0-9._-]+/g, " ").trim();
+          if (extracted) {
+            firstName = extracted.split(" ")[0];
+            firstName =
+              firstName.charAt(0).toUpperCase() + firstName.slice(1);
+          }
+        }
+        if (!firstName) firstName = "Friend";
+        if (!lastName) lastName = "";
 
-          if (!firstName && !lastName) {
-            let extracted = emailAddress.split("@")[0];
-            extracted = extracted.replace(/[0-9._-]+/g, " ").trim();
-            if (extracted) {
-              firstName = extracted.split(" ")[0];
-              firstName = firstName.charAt(0).toUpperCase() + firstName.slice(1);
+        // Replace placeholders
+        let personalizedBody = campaign.body
+          .replace(/{{firstName}}/g, firstName)
+          .replace(/{{lastName}}/g, lastName)
+          .replace(/{Name}/g, firstName);
+
+        // Wrap links with click-tracking
+        personalizedBody = personalizedBody.replace(
+          /href="([^"]+)"/g,
+          (match, url) =>
+            `href="https://emailmarketingbackend.onrender.com/campaigns/track/click/${campaign._id}/${recipient._id}?url=${encodeURIComponent(
+              url
+            )}"`
+        );
+
+        // ENHANCED TRACKING: Multiple tracking methods
+        const trackingId = `${campaign._id}_${recipient._id}_${Date.now()}`;
+        
+        // 1. Traditional tracking pixel (for clients that load images)
+        const pixelTracker = `<img src="https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?t=${trackingId}" width="1" height="1" style="display:none;" />`;
+        
+        // 2. CSS-based tracking (works even when images are blocked)
+        const cssTracker = `<style>
+          @media screen {
+            .email-tracker-${trackingId.replace(/[^a-zA-Z0-9]/g, '')} {
+              background-image: url('https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?css=true&t=${trackingId}');
             }
           }
+        </style>
+        <div class="email-tracker-${trackingId.replace(/[^a-zA-Z0-9]/g, '')}" style="height:0;overflow:hidden;"></div>`;
+        
+        // 3. Link-based tracking (embedded in content)
+        const linkTracker = `<a https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?link=true&t=${trackingId}" style="display:none;" aria-hidden="true">.</a>`;
+        // 4. Web beacon in a common HTML element
+        const beaconTracker = `<div style="background:url('https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?beacon=true&t=${trackingId}');width:0;height:0;overflow:hidden;"></div>`;
 
-          if (!firstName) firstName = "Friend";
-          if (!lastName) lastName = "";
+        // Inject all tracking methods
+        personalizedBody += `
+          ${pixelTracker}
+          ${cssTracker}
+          ${linkTracker}
+          ${beaconTracker}
+        `;
 
-          // Replace placeholders
-          let personalizedBody = campaign.body
-            .replace(/{{firstName}}/g, firstName)
-            .replace(/{{lastName}}/g, lastName)
-            .replace(/{Name}/g, firstName);
+        await sendEmail({
+          to: emailAddress,
+          subject: campaign.subject,
+          html: personalizedBody,
+        });
 
-          // Wrap links with click-tracking
-          personalizedBody = personalizedBody.replace(
-            /href="([^"]+)"/g,
-            (match, url) =>
-              `href="https://emailmarketingbackend.onrender.com/campaigns/track/click/${campaign._id}/${recipient._id}?url=${encodeURIComponent(
-                url
-              )}"`
-          );
+        sentCount++;
+        campaign.sentCount = sentCount;
+        await campaign.save();
+        console.log(`✅ Email sent to ${emailAddress}`);
 
-          // Tracking ID
-          const trackingId = `${campaign._id}_${recipient._id}_${Date.now()}`;
-          const safeTrackingId = trackingId.replace(/[^a-zA-Z0-9]/g, "");
-
-          // Trackers
-          const pixelTracker = `<img src="https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?t=${trackingId}" width="1" height="1" style="display:none;" />`;
-
-          const cssTracker = `
-            <style>
-              @media screen {
-                .email-tracker-${safeTrackingId} {
-                  background-image: url('https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?css=true&t=${trackingId}');
-                }
-              }
-            </style>
-            <div class="email-tracker-${safeTrackingId}" style="height:0;overflow:hidden;"></div>
-          `;
-
-          const linkTracker = `<a href="https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?link=true&t=${trackingId}" style="display:none;" aria-hidden="true">.</a>`;
-
-          const beaconTracker = `<div style="background:url('https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?beacon=true&t=${trackingId}');width:0;height:0;overflow:hidden;"></div>`;
-
-          // Inject all tracking
-          personalizedBody += `${pixelTracker}${cssTracker}${linkTracker}${beaconTracker}`;
-
-          // Send email
-          await sendEmail({
-            to: emailAddress,
-            subject: campaign.subject,
-            html: personalizedBody,
-          });
-
-          sentCount++;
-          campaign.sentCount = sentCount;
-          await campaign.save();
-
-          console.log(`✅ Sent to ${emailAddress} (${sentCount}/${campaign.recipients.length})`);
-
-          // 2 second delay between emails
-          await delay(2000);
-        } catch (error) {
-          console.error(`❌ Failed to send to ${recipient.email}:`, error.message);
-        }
+        await delay(2000);
+      } catch (error) {
+        console.error(`❌ Failed to send to ${recipient.email}`, error.message);
       }
+    }
 
-      campaign.status = "sent";
-      await campaign.save();
-      console.log("✅ Campaign finished:", campaign._id);
+    campaign.status = "sent";
+    await campaign.save();
+
+    res.json({
+      msg: "Campaign sent successfully",
+      sentCount: campaign.sentCount,
+      totalRecipients: campaign.recipients.length,
     });
   } catch (err) {
     console.error(err.message);
     res.status(500).send("Server error");
   }
 });
-
-
 
 // =============================
 // Analytics (fixed)
