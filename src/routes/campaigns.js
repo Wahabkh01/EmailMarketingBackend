@@ -227,7 +227,7 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
           await campaign.save();
 
           // 🔥 Short random delay (100–500 ms) instead of minutes
-          const randomDelay = Math.floor(Math.random() * 400) + 100;
+          const randomDelay = Math.floor(Math.random() * 40) + 100;
           await delay(randomDelay);
         } catch (err) {
           console.error("❌ Failed to send:", recipient.email, err.message);
