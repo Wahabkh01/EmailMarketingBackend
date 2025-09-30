@@ -217,8 +217,7 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
           extracted = extracted.replace(/[0-9._-]+/g, " ").trim();
           if (extracted) {
             firstName = extracted.split(" ")[0];
-            firstName =
-              firstName.charAt(0).toUpperCase() + firstName.slice(1);
+            firstName = firstName.charAt(0).toUpperCase() + firstName.slice(1);
           }
         }
         if (!firstName) firstName = "Friend";
@@ -234,76 +233,55 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
         personalizedBody = personalizedBody.replace(
           /href="([^"]+)"/g,
           (match, url) =>
-            `href="https://emailmarketingbackend.onrender.com/campaigns/track/click/${campaign._id}/${recipient._id}?url=${encodeURIComponent(
-              url
-            )}"`
+            `href="https://emailmarketingbackend.onrender.com/campaigns/track/click/${campaign._id}/${recipient._id}?url=${encodeURIComponent(url)}"`
         );
 
-        // ENHANCED TRACKING: Multiple tracking methods
+        // Tracking
         const trackingId = `${campaign._id}_${recipient._id}_${Date.now()}`;
+        const safeTrackingId = trackingId.replace(/[^a-zA-Z0-9]/g, '');
         
-        // 1. Traditional tracking pixel (for clients that load images)
         const pixelTracker = `<img src="https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?t=${trackingId}" width="1" height="1" style="display:none;" />`;
         
-        // 2. CSS-based tracking (works even when images are blocked)
         const cssTracker = `<style>
           @media screen {
-            .email-tracker-${trackingId.replace(/[^a-zA-Z0-9]/g, '')} {
+            .email-tracker-${safeTrackingId} {
               background-image: url('https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?css=true&t=${trackingId}');
             }
           }
         </style>
-        <div class="email-tracker-${trackingId.replace(/[^a-zA-Z0-9]/g, '')}" style="height:0;overflow:hidden;"></div>`;
+        <div class="email-tracker-${safeTrackingId}" style="height:0;overflow:hidden;"></div>`;
         
-        // 3. Link-based tracking (embedded in content)
-        const linkTracker = `<a https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?link=true&t=${trackingId}" style="display:none;" aria-hidden="true">.</a>`;
-        // 4. Web beacon in a common HTML element
+        const linkTracker = `<a href="https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?link=true&t=${trackingId}" style="display:none;" aria-hidden="true">.</a>`;
+        
         const beaconTracker = `<div style="background:url('https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?beacon=true&t=${trackingId}');width:0;height:0;overflow:hidden;"></div>`;
 
-        / Replace placeholders
-    let personalizedBody = campaign.body
-      .replace(/{{firstName}}/g, firstName)
-      .replace(/{{lastName}}/g, lastName)
-      .replace(/{Name}/g, firstName);
+        personalizedBody += `${pixelTracker}${cssTracker}${linkTracker}${beaconTracker}`;
 
-    // Wrap links with click-tracking
-    personalizedBody = personalizedBody.replace(
-      /href="([^"]+)"/g,
-      (match, url) =>
-        `href="https://emailmarketingbackend.onrender.com/campaigns/track/click/${campaign._id}/${recipient._id}?url=${encodeURIComponent(url)}"`
-    );
+        // Send with timeout
+        await Promise.race([
+          sendEmail({
+            to: emailAddress,
+            subject: campaign.subject,
+            html: personalizedBody,
+          }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Email timeout')), 30000)
+          )
+        ]);
 
-    // Tracking (simplified - you had too many trackers causing bloat)
-    const trackingId = `${campaign._id}_${recipient._id}_${Date.now()}`;
-    const pixelTracker = `<img src="https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?t=${trackingId}" width="1" height="1" style="display:none;" />`;
+        sentCount++;
+        campaign.sentCount = sentCount;
+        await campaign.save();
+        console.log(`✅ Email sent to ${emailAddress}`);
 
-    personalizedBody += pixelTracker;
-
-    // Send email with timeout handling
-    await Promise.race([
-      sendEmail({
-        to: emailAddress,
-        subject: campaign.subject,
-        html: personalizedBody,
-      }),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Email send timeout after 30s')), 30000)
-      )
-    ]);
-
-    sentCount++;
-    campaign.sentCount = sentCount;
-    await campaign.save();
-    console.log(`✅ Sent to ${emailAddress} (${sentCount}/${campaign.recipients.length})`);
-
-    // Delay between emails
-    if (sentCount < campaign.recipients.length) {
-      await delay(2000);
+        // Delay between emails (not after last one)
+        if (sentCount < campaign.recipients.length) {
+          await delay(2000);
+        }
+      } catch (error) {
+        console.error(`❌ Failed to send to ${recipient.email}:`, error.message);
+      }
     }
-  } catch (error) {
-    console.error(`❌ Failed to send to ${recipient.email}:`, error.message);
-  }
-}
 
     campaign.status = "sent";
     await campaign.save();
