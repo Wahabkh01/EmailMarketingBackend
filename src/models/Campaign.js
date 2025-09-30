@@ -26,7 +26,7 @@ const campaignSchema = new mongoose.Schema(
     recipients: [recipientSchema],
     status: {
       type: String,
-      enum: ["draft", "scheduled", "sending", "completed", "sent", "failed"],
+      enum: ["draft", "scheduled", "sending", "completed", "sent", "failed", "queued"],
       default: "draft",
     },
     scheduledAt: { type: Date },
