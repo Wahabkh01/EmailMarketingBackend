@@ -191,7 +191,7 @@ router.delete("/:id", authMiddleware, async (req, res) => {
 // Enhanced tracking implementation for your campaigns route
 
 // =============================
-// Send campaign under 50s (short random delay)
+// Send campaign with 2–3s delay between emails
 // =============================
 router.post("/:id/send", authMiddleware, async (req, res) => {
   try {
@@ -199,6 +199,7 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
       _id: req.params.id,
       userId: req.userId,
     });
+
     if (!campaign) return res.status(404).json({ msg: "Campaign not found" });
     if (!campaign.recipients || campaign.recipients.length === 0) {
       return res.status(400).json({ msg: "No recipients to send to" });
@@ -207,10 +208,10 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
     campaign.status = "sending";
     await campaign.save();
 
-    // Respond immediately so Render doesn’t time out
+    // ✅ Respond immediately so Render closes the connection
     res.json({ msg: "Campaign sending started" });
 
-    // Fire and forget (but short delays to avoid 50s timeout)
+    // ✅ Background sending
     (async () => {
       let sentCount = 0;
       const delay = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -222,15 +223,19 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
             subject: campaign.subject,
             html: campaign.body,
           });
+
           sentCount++;
           campaign.sentCount = sentCount;
           await campaign.save();
 
-          // 🔥 Short random delay (100–500 ms) instead of minutes
-          const randomDelay = Math.floor(Math.random() * 40) + 100;
+          // 🔥 Random delay 2–3 seconds
+          const randomDelay = (Math.floor(Math.random() * 2) + 2) * 1000;
+          console.log(`⏳ Waiting ${randomDelay / 1000}s before next email...`);
           await delay(randomDelay);
+
+          console.log(`✅ Sent to ${recipient.email}`);
         } catch (err) {
-          console.error("❌ Failed to send:", recipient.email, err.message);
+          console.error(`❌ Failed to send to ${recipient.email}:`, err.message);
         }
       }
 
@@ -238,11 +243,13 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
       await campaign.save();
       console.log("✅ Campaign finished:", campaign._id);
     })();
+
   } catch (err) {
     console.error(err.message);
     res.status(500).send("Server error");
   }
 });
+
 
 
 // =============================
