@@ -260,30 +260,50 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
         // 4. Web beacon in a common HTML element
         const beaconTracker = `<div style="background:url('https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?beacon=true&t=${trackingId}');width:0;height:0;overflow:hidden;"></div>`;
 
-        // Inject all tracking methods
-        personalizedBody += `
-          ${pixelTracker}
-          ${cssTracker}
-          ${linkTracker}
-          ${beaconTracker}
-        `;
+        / Replace placeholders
+    let personalizedBody = campaign.body
+      .replace(/{{firstName}}/g, firstName)
+      .replace(/{{lastName}}/g, lastName)
+      .replace(/{Name}/g, firstName);
 
-        await sendEmail({
-          to: emailAddress,
-          subject: campaign.subject,
-          html: personalizedBody,
-        });
+    // Wrap links with click-tracking
+    personalizedBody = personalizedBody.replace(
+      /href="([^"]+)"/g,
+      (match, url) =>
+        `href="https://emailmarketingbackend.onrender.com/campaigns/track/click/${campaign._id}/${recipient._id}?url=${encodeURIComponent(url)}"`
+    );
 
-        sentCount++;
-        campaign.sentCount = sentCount;
-        await campaign.save();
-        console.log(`✅ Email sent to ${emailAddress}`);
+    // Tracking (simplified - you had too many trackers causing bloat)
+    const trackingId = `${campaign._id}_${recipient._id}_${Date.now()}`;
+    const pixelTracker = `<img src="https://emailmarketingbackend.onrender.com/campaigns/track/open/${campaign._id}/${recipient._id}?t=${trackingId}" width="1" height="1" style="display:none;" />`;
 
-        await delay(2000);
-      } catch (error) {
-        console.error(`❌ Failed to send to ${recipient.email}`, error.message);
-      }
+    personalizedBody += pixelTracker;
+
+    // Send email with timeout handling
+    await Promise.race([
+      sendEmail({
+        to: emailAddress,
+        subject: campaign.subject,
+        html: personalizedBody,
+      }),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Email send timeout after 30s')), 30000)
+      )
+    ]);
+
+    sentCount++;
+    campaign.sentCount = sentCount;
+    await campaign.save();
+    console.log(`✅ Sent to ${emailAddress} (${sentCount}/${campaign.recipients.length})`);
+
+    // Delay between emails
+    if (sentCount < campaign.recipients.length) {
+      await delay(2000);
     }
+  } catch (error) {
+    console.error(`❌ Failed to send to ${recipient.email}:`, error.message);
+  }
+}
 
     campaign.status = "sent";
     await campaign.save();
