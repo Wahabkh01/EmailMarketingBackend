@@ -191,7 +191,7 @@ router.delete("/:id", authMiddleware, async (req, res) => {
 // Enhanced tracking implementation for your campaigns route
 
 // =============================
-// Send campaign with 2–3s delay between emails
+// Send campaign with fixed 2s delay between emails
 // =============================
 router.post("/:id/send", authMiddleware, async (req, res) => {
   try {
@@ -228,10 +228,9 @@ router.post("/:id/send", authMiddleware, async (req, res) => {
           campaign.sentCount = sentCount;
           await campaign.save();
 
-          // 🔥 Random delay 2–3 seconds
-          const randomDelay = (Math.floor(Math.random() * 2) + 2) * 1000;
-          console.log(`⏳ Waiting ${randomDelay / 1000}s before next email...`);
-          await delay(randomDelay);
+          // 🔥 Fixed 2 second delay
+          console.log("⏳ Waiting 2s before next email...");
+          await delay(2000);
 
           console.log(`✅ Sent to ${recipient.email}`);
         } catch (err) {
